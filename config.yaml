@@ -1,0 +1,33 @@
+tickers:
+    - BTC-USD
+    - ETH-USD
+    - BNB-USD
+    - ADA-USD
+    - XRP-USD
+    - DOGE-USD
+    - DOT-USD
+    - LTC-USD
+    - BCH-USD
+    - SOL-USD
+    - AVAX-USD
+    - LINK-USD
+    - UNI-USD
+    - XLM-USD
+    - TRX-USD
+    - ETC-USD
+    - XMR-USD
+    - ALGO-USD
+    - VET-USD
+    - FIL-USD
+    - MATIC-USD
+    - EOS-USD
+    - AAVE-USD
+    - SUSHI-USD
+    - MKR-USD
+    - ZEC-USD
+    - DASH-USD
+    - THETA-USD
+    - ICP-USD
+    - KSM-USD
+period: "5y"
+data_file: "crypto_data.csv"
