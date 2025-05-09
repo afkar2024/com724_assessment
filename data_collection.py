@@ -36,9 +36,12 @@ def download_ticker_data(ticker):
         df = yf.download(ticker, period=PERIOD)
         if df.empty:
             return ticker, None
-        df.dropna(inplace=True)
+        # Fill missing values by interpolation + ffill/bfill
+        df.interpolate(method='time', inplace=True)
+        df.ffill(inplace=True)
+        df.bfill(inplace=True)
         return ticker, df
-    except Exception as e:
+    except Exception:
         return ticker, None
 
 
@@ -106,6 +109,42 @@ def load_data(tickers, period="5y", cache_file="crypto_data.csv", notify_fn=None
     return data
 
 
+# -----------------------------
+# Technical Indicators
+# -----------------------------
+def compute_technical_indicators(data_dict):
+    """Compute RSI, MACD, Bollinger Bands, and rolling volatility for each ticker."""
+    ind_data = {}
+    for tk, df in data_dict.items():
+        df2 = df.copy()
+        # RSI (14)
+        delta = df2['Close'].diff()
+        up = delta.clip(lower=0)
+        down = -1 * delta.clip(upper=0)
+        roll_up = up.ewm(com=13, adjust=False).mean()
+        roll_down = down.ewm(com=13, adjust=False).mean()
+        rs = roll_up / roll_down
+        df2['RSI'] = 100 - (100 / (1 + rs))
+        # MACD
+        ema12 = df2['Close'].ewm(span=12, adjust=False).mean()
+        ema26 = df2['Close'].ewm(span=26, adjust=False).mean()
+        df2['MACD'] = ema12 - ema26
+        df2['MACD_signal'] = df2['MACD'].ewm(span=9, adjust=False).mean()
+        # Bollinger Bands (20)
+        ma20 = df2['Close'].rolling(window=20).mean()
+        std20 = df2['Close'].rolling(window=20).std()
+        df2['BB_upper'] = ma20 + 2 * std20
+        df2['BB_lower'] = ma20 - 2 * std20
+        # Rolling volatility (30-day)
+        df2['Volatility'] = df2['Close'].pct_change().rolling(window=30).std()
+        # Fill any NAs after indicators
+        df2.interpolate(method='time', inplace=True)
+        df2.ffill(inplace=True)
+        df2.bfill(inplace=True)
+        ind_data[tk] = df2
+    return ind_data
+
+
 def align_data(data_dict, metrics=("Open","High","Low","Close","Volume")):
     """
     Align multiple time-series DataFrames on common dates.
@@ -119,15 +158,24 @@ def align_data(data_dict, metrics=("Open","High","Low","Close","Volume")):
     return aligned
 
 
+# -----------------------------
+# Feature extraction
+# -----------------------------
 def extract_features(aligned_data):
-    """
-    Compute daily percent-change features and flatten per ticker.
-    Returns features_df (cryptos x features).
-    """
+    """Compute percent-change features and include technical indicators."""
     features = {}
     for tk, df in aligned_data.items():
-        returns = df.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0)
-        features[tk] = returns.values.flatten()
+        # Percent-change of OHLCV
+        df_returns = df.pct_change().dropna()
+        # Retrieve computed indicators aligned by index
+        # Ensure indicators exist in df (after compute_technical_indicators)
+        ind_cols = ['RSI','MACD','MACD_signal','BB_upper','BB_lower','Volatility']
+        df_ind = df_returns.index.to_series().apply(lambda d: None)
+        # Build indicator matrix
+        ind_matrix = np.vstack([aligned_data[tk].loc[df_returns.index, col].values for col in ind_cols]).T
+        # Flatten OHLCV + indicators
+        vec = np.concatenate([df_returns.values.flatten(), ind_matrix.flatten()])
+        features[tk] = vec
     features_df = pd.DataFrame.from_dict(features, orient='index')
     return features_df
 
@@ -164,6 +212,17 @@ def find_best_pca_components(scaled_features, max_comp, n_clusters=4):
     best = max(scores, key=scores.get)
     return best, scores
 
+
+# -----------------------------
+# Clustering & grouping
+# -----------------------------
+def find_best_k_elbow(scaled_features, k_range=range(2,11)):
+    """Return list of (k, inertia) for elbow plot."""
+    inertias = {}
+    for k in k_range:
+        km = KMeans(n_clusters=k, random_state=42).fit(scaled_features)
+        inertias[k] = km.inertia_
+    return inertias
 
 def cluster_data(pca_features, n_clusters=4):
     """
@@ -246,19 +305,28 @@ def perform_eda(aligned_data, selected, output_dir="plots"):
     return results
 
 
-# Example pipeline function
-
+# -----------------------------
+# Pipeline Orchestration
+# -----------------------------
 def run_full_pipeline(tickers, notify_fn=None):
-    data = load_data(tickers, notify_fn=notify_fn)
+    data = load_cached_data()
+    # Notify load
+    if notify_fn: notify_fn('pipeline.stage', {'stage': 'data_loaded'})
     aligned = align_data(data)
-    features_df = extract_features(aligned)
+    # Compute indicators
+    enriched = compute_technical_indicators(aligned)
+    if notify_fn: notify_fn('pipeline.stage', {'stage': 'indicators_computed'})
+    features_df = extract_features(enriched)
+    if notify_fn: notify_fn('pipeline.stage', {'stage': 'features_extracted'})
     scaled, scaler = standardize_features(features_df)
     pca_feats, pca_model, n_comp, var = compute_pca(scaled)
+    if notify_fn: notify_fn('pipeline.stage', {'stage': 'pca_completed', 'components': n_comp})
+    # Optionally determine best k with elbow
+    # inertias = find_best_k_elbow(pca_feats)
     labels, algo, score = cluster_data(pca_feats)
-    reps = select_representatives(pca_feats, labels, list(aligned.keys()))
-    corr, pos, neg = correlation_analysis(aligned, reps)
-    eda_files = perform_eda(aligned, reps)
-    # Aggregate results
+    reps = select_representatives(pca_feats, labels, list(enriched.keys()))
+    corr, pos, neg = correlation_analysis(enriched, reps)
+    eda_files = perform_eda(enriched, reps)
     return {
         'representatives': reps,
         'clusters': labels.tolist(),
