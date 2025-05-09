@@ -1,3 +1,4 @@
 crypto_venv
 *.png
 *.csv
+.vscode
