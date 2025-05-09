@@ -117,6 +117,10 @@ def compute_technical_indicators(data_dict):
     ind_data = {}
     for tk, df in data_dict.items():
         df2 = df.copy()
+
+        # ensure the index really is datetime, so time-based interpolation works
+        df2.index = pd.to_datetime(df2.index)
+
         # RSI (14)
         delta = df2['Close'].diff()
         up = delta.clip(lower=0)
@@ -125,23 +129,34 @@ def compute_technical_indicators(data_dict):
         roll_down = down.ewm(com=13, adjust=False).mean()
         rs = roll_up / roll_down
         df2['RSI'] = 100 - (100 / (1 + rs))
+
         # MACD
         ema12 = df2['Close'].ewm(span=12, adjust=False).mean()
         ema26 = df2['Close'].ewm(span=26, adjust=False).mean()
         df2['MACD'] = ema12 - ema26
         df2['MACD_signal'] = df2['MACD'].ewm(span=9, adjust=False).mean()
+
         # Bollinger Bands (20)
         ma20 = df2['Close'].rolling(window=20).mean()
         std20 = df2['Close'].rolling(window=20).std()
         df2['BB_upper'] = ma20 + 2 * std20
         df2['BB_lower'] = ma20 - 2 * std20
+
         # Rolling volatility (30-day)
         df2['Volatility'] = df2['Close'].pct_change().rolling(window=30).std()
-        # Fill any NAs after indicators
-        df2.interpolate(method='time', inplace=True)
+
+        # Fill any NAs after indicators:
+        # try the time-based interpolation, but if it fails, fall back to linear
+        try:
+            df2.interpolate(method='time', inplace=True)
+        except ValueError:
+            df2.interpolate(method='linear', inplace=True)
+
         df2.ffill(inplace=True)
         df2.bfill(inplace=True)
+
         ind_data[tk] = df2
+
     return ind_data
 
 

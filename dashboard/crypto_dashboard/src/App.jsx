@@ -74,7 +74,7 @@ const App = () => {
 
             {/* Main content */}
             {tab === "chart" && <RealtimeChart />}
-            {tab === "analysis" && <CryptoAnalysis />}
+            {tab === "analysis" && <CryptoAnalysis ticker={activeSymbol} />}
             {tab === "forecast" && <ForecastDashboard />}
         </div>
     );

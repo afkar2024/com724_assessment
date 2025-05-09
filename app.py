@@ -4,6 +4,7 @@ import yaml
 import logging
 from logging.handlers import RotatingFileHandler
 
+import pandas as pd
 from flask import Flask, jsonify, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
@@ -159,6 +160,65 @@ def get_forecast(ticker):
     except Exception as e:
         logger.exception(f"Forecast error for {ticker}")
         return jsonify({'error': 'Forecast computation failed', 'message': str(e)}), 500
+
+
+@app.route('/api/eda/<string:ticker>')
+def get_eda(ticker):
+    """Return EDA data (trend, distribution, box-by-year, rolling-vol) for a ticker."""
+    global _cached_data
+    if _cached_data is None:
+        _cached_data = load_data(TICKERS, period=PERIOD, cache_file=CACHE_FILE)
+    if ticker not in _cached_data:
+        return jsonify({'error': 'ticker not found'}), 404
+
+    # 1) grab & clean raw OHLCV so that the index is pure datetime
+    raw = _cached_data[ticker].copy()
+    raw.index = pd.to_datetime(raw.index, errors='coerce')      # invalid -> NaT
+    raw = raw[~raw.index.isna()]                                 # drop those
+
+    # 2) now compute your indicators on the cleaned DataFrame
+    from data_collection import compute_technical_indicators
+    df = compute_technical_indicators({ticker: raw})[ticker]
+
+    # 3) flatten for JSON
+    df = df.reset_index().rename(columns={'index': 'date'})
+    df['date'] = df['date'].astype(str)
+
+    # 4) trend + rolling 50-day MA
+    trend = df[['date', 'Close']].to_dict(orient='records')
+    ma50 = (
+        df[['date', 'Close']]
+        .assign(ma50=df['Close'].rolling(50).mean())
+        .dropna()[['date', 'ma50']]
+        .to_dict(orient='records')
+    )
+
+    # 5) distribution of daily returns
+    dist = df.assign(ret=df['Close'].pct_change()).dropna()
+    dist_data = dist[['ret']].to_dict(orient='records')
+
+    # 6) box-by-year
+    byyr = dist.copy()
+    byyr['year'] = pd.to_datetime(byyr['date']).dt.year
+    box = {yr: grp['ret'].tolist() for yr, grp in byyr.groupby('year')}
+
+    # 7) rolling 30-day volatility
+    vol = (
+        df.assign(vol=df['Close'].pct_change().rolling(30).std())
+          .dropna()[['date','vol']]
+          .to_dict(orient='records')
+    )
+
+    return jsonify({
+        'ticker':       ticker,
+        'trend':        trend,
+        'ma50':         ma50,
+        'distribution': dist_data,
+        'box_by_year':  box,
+        'volatility':   vol,
+    })
+
+
 
 @app.route('/api/signals/<string:ticker>')
 def get_signals(ticker):
