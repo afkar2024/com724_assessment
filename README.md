@@ -1,56 +1,158 @@
+Thought for a couple of seconds
+
+```markdown
 # com724_assessment
 
-This project performs a comprehensive analysis of 30 cryptocurrencies by downloading historical OHLCV data, computing returns, applying PCA for dimensionality reduction, clustering the coins, and performing correlation analysis. The analysis is implemented in the `data_collection.py` script.
+This project performs a comprehensive analysis of 30 cryptocurrencies by downloading historical OHLCV data, computing returns, applying PCA
+for dimensionality reduction, clustering the coins, and performing correlation analysis. It exposes a Flask‐based REST &
+WebSocket API for forecasts, signals, EDA and an interactive React dashboard to visualize real‐time data, analysis and forecasts.
 
-## Requirements
+---
 
--   Python 3.7 or higher
--   Internet connection (to download data from Yahoo Finance)
-
-The following Python libraries are required:
-
--   yfinance
--   pandas
--   numpy
--   scikit-learn
--   matplotlib
-
-## Setup Instructions
-
-### 1. Clone or Download the Project
-
-Clone this repository or download the project files to your local machine.
-
-### 2. Create and Activate the Virtual Environment
-
-#### On Ubuntu/Linux/macOS:
-
-Open a terminal in the project directory and run:
-
-```bash
-python3 -m venv crypto_venv
-source crypto_venv/bin/activate
+## 📂 Repository Structure
 ```
 
-### On Windows:
+com724_assessment/
 
-Open Command Prompt in the project directory and run:
+├── app.py # Flask + SocketIO backend
 
-```bash
-python -m venv crypto_venv
-crypto_venv\Scripts\activate
-```
+├── config.yaml # Tickers, periods, file paths
 
-### 3. Install Dependencies
+├── crypto_data.csv # Cached OHLCV data
 
-```bash
-pip install -r requirements.txt
-```
+├── data_collection.py # ETL, PCA, clustering, EDA pipelines
 
-### 4. Run the Script
+├── forecasting.py # ARIMA & Prophet wrappers
 
-```bash
-python data_collection.py
-```
+├── signals.py # Trading‐signal generator & backtester
 
-### 5. Viewing the Output
+├── requirements.txt # Python dependencies
+
+├── README.md # This file
+
+├── dashboard/
+
+│ └── crypto_dashboard/ # React front-end
+
+│ ├── package.json
+
+│ ├── src/
+
+│ │ ├── App.jsx
+
+│ │ ├── components/
+
+│ │ ├── store/
+
+│ │ └── api/
+
+│ └── public/
+
+└── crypto_venv/ # (optional) Python virtualenv
+
+````
+
+---
+
+## 🔧 Prerequisites
+
+- **Python** ≥ 3.7
+- **Node.js & npm** (for the React dashboard)
+- Internet connection (to fetch data from Yahoo Finance)
+
+---
+
+## 🐍 Backend Setup (Flask + SocketIO)
+
+1. **Activate your Python virtual environment**
+   ```bash
+   cd com724_assessment
+   python -m venv crypto_venv
+   # Windows
+   crypto_venv\Scripts\activate
+   # Linux/Mac
+   source crypto_venv/bin/activate
+````
+
+2. **Install Python dependencies**
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+3. **Configure**
+
+    - Edit `config.yaml` to adjust tickers, period, cache file, etc.
+
+4. **Run the Flask server**
+
+    ```bash
+    python app.py
+    ```
+
+    By default, the API will listen on `http://0.0.0.0:5000`.
+
+    Endpoints include:
+
+    - `GET /api/tickers`
+    - `GET /api/forecast/<TICKER>?model=prophet&horizon=30`
+    - `GET /api/signals/<TICKER>?threshold=0.01…`
+    - `GET /api/eda/<TICKER>`
+    - WebSocket channel for `/api/pipeline` analysis
+
+---
+
+## ⚛️ Frontend Setup (React Dashboard)
+
+1. **Install Node dependencies**
+
+    ```bash
+    cd dashboard/crypto_dashboard
+    npm install
+    ```
+
+2. **Configure API base URL**
+
+    - In `.env` (or `VITE_API_BASE_URL`), point to your Flask server, e.g.:
+        ```ini
+        VITE_API_BASE_URL=http://localhost:5000
+        ```
+
+3. **Run the React app**
+
+    ```bash
+    npm run dev
+    ```
+
+    By default, the dashboard will be available at `http://localhost:5173`.
+
+---
+
+## 🚀 Usage
+
+1. Start the **backend** :
+    ```bash
+    cd com724_assessment
+    crypto_venv\Scripts\activate  # or source venv
+    python app.py
+    ```
+2. Start the **frontend** (in a separate terminal):
+    ```bash
+    cd com724_assessment/dashboard/crypto_dashboard
+    npm install      # if you haven't already
+    npm run dev
+    ```
+3. Open your browser at `http://localhost:5173`
+    - **Real-time Chart** tab: live WebSocket-fed candles
+    - **Crypto Analysis** tab: runs the clustering/EDA pipeline via SocketIO
+    - **Forecast** tab: Prophet/ARIMA forecasts, target-price & signal performance
+
+---
+
+## 🗒️ Notes
+
+-   Cached data is stored in `crypto_data.csv`. Delete it to force a full re-download.
+-   Logs are written to `app.log` (rotating, 10 MB max).
+-   To extend the prediction horizon beyond 365 days, adjust `max_horizon` in `config.yaml` and re-start.
+
+Happy analyzing! 🚀
