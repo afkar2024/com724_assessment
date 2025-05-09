@@ -86,31 +86,33 @@ export const RealtimeChart = () => {
     const { data, xScale, xAccessor, displayXAccessor } = XScale(bars);
 
     return (
-        <ChartCanvas
-            height={400}
-            width={800}
-            ratio={window.devicePixelRatio}
-            margin={{ left: 50, right: 50, top: 10, bottom: 30 }}
-            data={data}
-            seriesName={activeSymbol}
-            xScale={xScale}
-            xAccessor={xAccessor}
-            displayXAccessor={displayXAccessor}
-            panEvent={true}
-            zoomEvent={true}
-            clamp={true}
-        >
-            <Chart id={1} yExtents={(d) => [d.high, d.low]}>
-                <XAxis />
-                <YAxis />
-                <MouseCoordinateX
-                    displayFormat={timeFormat("%Y-%m-%d %H:%M")}
-                />
-                <MouseCoordinateY displayFormat={format(".2f")} />
-                <CandlestickSeries />
-                <OHLCTooltip origin={[0, -10]} />
-            </Chart>
-            <CrossHairCursor />
-        </ChartCanvas>
+        <div className="p-2 border-2 h-fit w-fit">
+            <ChartCanvas
+                height={400}
+                width={800}
+                ratio={window.devicePixelRatio}
+                margin={{ left: 50, right: 50, top: 30, bottom: 30 }}
+                data={data}
+                seriesName={activeSymbol}
+                xScale={xScale}
+                xAccessor={xAccessor}
+                displayXAccessor={displayXAccessor}
+                panEvent={true}
+                zoomEvent={true}
+                clamp={true}
+            >
+                <Chart id={1} yExtents={(d) => [d.high, d.low]}>
+                    <XAxis />
+                    <YAxis />
+                    <MouseCoordinateX
+                        displayFormat={timeFormat("%Y-%m-%d %H:%M")}
+                    />
+                    <MouseCoordinateY displayFormat={format(".2f")} />
+                    <CandlestickSeries />
+                    <OHLCTooltip origin={[0, -10]} />
+                </Chart>
+                <CrossHairCursor />
+            </ChartCanvas>
+        </div>
     );
 };
