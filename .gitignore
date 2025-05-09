@@ -3,3 +3,4 @@ crypto_venv
 *.csv
 .vscode
 *.pyc
+*.log
