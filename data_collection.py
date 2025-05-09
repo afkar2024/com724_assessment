@@ -194,8 +194,10 @@ for ticker in all_ticker_data:  # iterate over successfully processed tickers on
     df = all_ticker_data[ticker]
     close_returns[ticker] = df['Close'].pct_change().dropna()
 
-close_returns_df = pd.DataFrame(close_returns)
-# Use only the selected tickers for correlation analysis.
+# build DataFrame properly by concatenating Series
+close_returns_df = pd.concat(close_returns, axis=1)
+
+# Now select only the 4 you picked
 selected_close_returns = close_returns_df[selected]
 
 corr_matrix = selected_close_returns.corr()
