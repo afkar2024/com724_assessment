@@ -1,6 +1,9 @@
 # app.py
 import os
 import yaml
+import logging
+from logging.handlers import RotatingFileHandler
+
 from flask import Flask, jsonify, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
@@ -26,8 +29,50 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'secret!')
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# In-memory cache
+# In-memory cache and models
 _cached_data = None
+_models = {}
+
+# Configure logging
+# Create root logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Console handler
+console_h = logging.StreamHandler()
+console_h.setLevel(logging.INFO)
+
+# File handler (rotates at 10 MB, keeps 5 backups)
+file_h = RotatingFileHandler("app.log", maxBytes=10*1024*1024, backupCount=5)
+file_h.setLevel(logging.INFO)
+
+# A nice formatter for both
+fmt = logging.Formatter(
+    "%(asctime)s %(levelname)-8s %(name)s:%(lineno)d — %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+console_h.setFormatter(fmt)
+file_h.setFormatter(fmt)
+
+# Attach handlers
+logger.addHandler(console_h)
+logger.addHandler(file_h)
+
+# Initialization: load data and train forecasting models
+
+def initialize_data_and_models():
+    global _cached_data, _models
+    # Load historical OHLCV data once
+    _cached_data = load_data(TICKERS, period=PERIOD, cache_file=CACHE_FILE)
+    # Pre-train Prophet models for each ticker
+    for tk, df in _cached_data.items():
+        try:
+            ts = df['Close'].dropna()
+            model = ProphetModel().fit(ts)
+            _models[tk] = model
+            logger.info(f"Prophet model trained for {tk}")
+        except Exception as e:
+            logger.error(f"Failed to train Prophet for {tk}: {e}")
 
 # Helper: emit via SocketIO
 notify = lambda evt, data: socketio.emit(evt, data)
@@ -79,20 +124,40 @@ def get_ticker_data(ticker):
 
 @app.route('/api/forecast/<string:ticker>')
 def get_forecast(ticker):
-    """Return forecast for a given ticker and horizon via query params."""
+    """
+    Return pre-trained Prophet forecast or on-the-fly ARIMA forecast.
+    """
     model_name = request.args.get('model', 'prophet').lower()
     horizon = int(request.args.get('horizon', 7))
     global _cached_data
+    # if background init isn't done yet, load inline
     if _cached_data is None:
+        logger.info("Forecast requested pre-init—loading data on demand.")
         _cached_data = load_data(TICKERS, period=PERIOD, cache_file=CACHE_FILE)
     if ticker not in _cached_data:
         return jsonify({'error': 'ticker not found'}), 404
-    ts = _cached_data[ticker]['Close']
-    model = ARIMAModel() if model_name == 'arima' else ProphetModel()
-    model.fit(ts)
-    fc = model.predict(horizon)
-    records = fc.reset_index().to_dict(orient='records')
-    return jsonify({'ticker': ticker, 'model': model_name, 'horizon': horizon, 'forecast': records})
+    try:
+        if model_name == 'arima':
+            # On-demand ARIMA
+            ts = _cached_data[ticker]['Close'].dropna()
+            model = ARIMAModel().fit(ts)
+        else:
+            # Use pre-trained Prophet
+            if ticker not in _models:
+                return jsonify({'error': 'Prophet model unavailable'}), 500
+            model = _models[ticker]
+        # Generate forecast
+        fc = model.predict(horizon)
+        records = fc.reset_index().to_dict(orient='records')
+        return jsonify({
+            'ticker': ticker,
+            'model': model_name,
+            'horizon': horizon,
+            'forecast': records
+        })
+    except Exception as e:
+        logger.exception(f"Forecast error for {ticker}")
+        return jsonify({'error': 'Forecast computation failed', 'message': str(e)}), 500
 
 @app.route('/api/signals/<string:ticker>')
 def get_signals(ticker):
@@ -178,4 +243,6 @@ def on_run_pipeline(_json):
 # Main entry
 # -----------------------------
 if __name__ == '__main__':
+    initialize_data_and_models()
+    logger.info("Data & models loaded—starting server.")
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)

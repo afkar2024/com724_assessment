@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import useCryptoStore from "./store/useCryptoStore";
 import { RealtimeChart } from "./components/RealtimeChart";
 import { CryptoAnalysis } from "./components/CryptoAnalysis";
+import { ForecastDashboard } from "./components/ForecastDashboard";
 import api from "./api/axios";
 import { toast } from "react-toastify";
 import { SymbolDropdown } from "./components/SymbolDropdown";
@@ -50,23 +51,31 @@ const App = () => {
                 >
                     Crypto Analysis
                 </button>
+                <button
+                    onClick={() => setTab("forecast")}
+                    className={`px-4 py-2 rounded ${
+                        tab === "forecast"
+                            ? "bg-blue-600 text-white"
+                            : "bg-gray-200 text-gray-800"
+                    }`}
+                >
+                    Forecast
+                </button>
             </div>
 
-            {tab === "chart" ? (
-                <>
-                    {/* ← Here’s our new dropdown in place of all those buttons */}
-                    <div className="mb-4">
-                        <SymbolDropdown
-                            symbols={symbols}
-                            value={activeSymbol}
-                            onChange={setSymbol}
-                        />
-                    </div>
-                    <RealtimeChart />
-                </>
-            ) : (
-                <CryptoAnalysis />
-            )}
+            {/* Symbol selector */}
+            <div className="mb-4 w-48">
+                <SymbolDropdown
+                    symbols={symbols}
+                    value={activeSymbol}
+                    onChange={setSymbol}
+                />
+            </div>
+
+            {/* Main content */}
+            {tab === "chart" && <RealtimeChart />}
+            {tab === "analysis" && <CryptoAnalysis />}
+            {tab === "forecast" && <ForecastDashboard />}
         </div>
     );
 };
