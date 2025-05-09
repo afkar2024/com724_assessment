@@ -3,6 +3,7 @@ import os
 import yaml
 from flask import Flask, jsonify, request
 from flask_socketio import SocketIO, emit
+from flask_cors import CORS
 from data_collection import load_data, run_full_pipeline
 from forecasting import ARIMAModel, ProphetModel
 from signals import generate_trading_signals, backtest_signals
@@ -21,6 +22,7 @@ CACHE_FILE = config.get('data_file', 'crypto_data.csv')
 # Flask & SocketIO setup
 # -----------------------------
 app = Flask(__name__)
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'secret!')
 socketio = SocketIO(app, cors_allowed_origins="*")
 
