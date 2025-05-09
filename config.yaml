@@ -31,3 +31,4 @@ tickers:
     - KSM-USD
 period: "5y"
 data_file: "crypto_data.csv"
+max_horizon: 365

@@ -20,6 +20,7 @@ with open('config.yaml', 'r') as f:
 TICKERS = config['tickers']
 PERIOD = config.get('period', '5y')
 CACHE_FILE = config.get('data_file', 'crypto_data.csv')
+MAX_HORIZON = config.get('max_horizon', 365)
 
 # -----------------------------
 # Flask & SocketIO setup
@@ -165,7 +166,7 @@ def get_signals(ticker):
     profit_thresh = float(request.args.get('threshold', 0.01))
     rsi_over = float(request.args.get('rsi_overbought', 70))
     rsi_under = float(request.args.get('rsi_oversold', 30))
-    horizon = int(request.args.get('horizon', 7))
+    horizon = min(int(request.args.get('horizon', 7)), MAX_HORIZON)
 
     global _cached_data
     if _cached_data is None:

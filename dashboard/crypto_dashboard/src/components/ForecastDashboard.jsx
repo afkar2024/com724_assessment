@@ -21,17 +21,26 @@ export const ForecastDashboard = () => {
     const { activeSymbol, priceData } = useCryptoStore();
     const bars = priceData[activeSymbol] || [];
 
+    // local state
     const [forecast, setForecast] = useState([]);
     const [targetPrice, setTargetPrice] = useState("");
     const [targetDate, setTargetDate] = useState(null);
-    const [maxProfitInfo, setMaxProfitInfo] = useState("");
+    const [maxProfitInfo, setMaxProfitInfo] = useState(null);
+    const [loading, setLoading] = useState(false);
 
-    // Pull in the last-close as currentPrice
-    const currentPrice = bars.length > 0 ? bars[bars.length - 1].close : null;
+    // last-close
+    const currentPrice = bars.length ? bars[bars.length - 1].close : null;
 
-    // Fetch forecast whenever symbol changes
+    // whenever symbol changes, reset & fetch
     useEffect(() => {
+        setForecast([]);
+        setTargetPrice("");
+        setTargetDate(null);
+        setMaxProfitInfo(null);
+
         if (!activeSymbol) return;
+
+        setLoading(true);
         api.get(`/api/forecast/${activeSymbol}?model=prophet&horizon=365`)
             .then((res) => {
                 const fc = res.data.forecast.map((d) => ({
@@ -39,52 +48,39 @@ export const ForecastDashboard = () => {
                     price: d.yhat,
                 }));
                 setForecast(fc);
-                setTargetDate(null);
             })
-            .catch(console.error);
+            .catch(console.error)
+            .finally(() => setLoading(false));
     }, [activeSymbol]);
 
-    // Compute the date when forecast ≥ currentPrice + profit
+    // compute metrics once we have forecast + a current price
     useEffect(() => {
-        if (
-            !forecast.length ||
-            !currentPrice ||
-            targetPrice === "" ||
-            isNaN(parseFloat(targetPrice))
-        )
-            return;
+        if (!forecast.length || currentPrice == null) return;
 
         const lastBarTime = bars[bars.length - 1].time.getTime();
-        const profit = parseFloat(targetPrice);
-        const threshold = currentPrice + profit;
+        const future = forecast.filter((d) => d.date.getTime() > lastBarTime);
 
-        const futureForecasts = forecast.filter(
-            (d) => d.date.getTime() > lastBarTime
-        );
-        if (futureForecasts.length) {
-            const maxPoint = futureForecasts.reduce(
+        // max profit
+        if (future.length) {
+            const maxPoint = future.reduce(
                 (best, d) => (d.price > best.price ? d : best),
-                futureForecasts[0]
+                future[0]
             );
-            const maxProfit = maxPoint.price - currentPrice;
-            // store in state (you’ll need a new piece of state: e.g. maxProfitInfo)
             setMaxProfitInfo({
-                profit: maxProfit,
+                profit: maxPoint.price - currentPrice,
                 date: maxPoint.date,
             });
         }
-        // find *all* hits, then pick the last one
-        const hits = forecast.filter(
-            (d) => d.date.getTime() > lastBarTime && d.price >= threshold
-        );
-        setTargetDate(hits.length ? hits[hits.length - 1].date : null);
+
+        // target date
+        if (targetPrice !== "" && !isNaN(+targetPrice)) {
+            const threshold = currentPrice + +targetPrice;
+            const hits = future.filter((d) => d.price >= threshold);
+            setTargetDate(hits.length ? hits[hits.length - 1].date : null);
+        }
     }, [forecast, targetPrice, currentPrice, bars]);
 
-    if (!activeSymbol) {
-        return <div className="p-4">Select a symbol to view forecast.</div>;
-    }
-
-    // Merge bar+forecast into one timeline
+    // build the merged data array
     const merged = [
         ...bars.map((b) => ({
             date: b.time,
@@ -104,7 +100,26 @@ export const ForecastDashboard = () => {
         })),
     ];
 
-    // Build the xScale
+    // if no symbol selected, empty
+    if (!activeSymbol) {
+        return <div className="p-4">Select a symbol to view forecast.</div>;
+    }
+
+    // if we're mid-fetch, show a spinner
+    if (loading) {
+        return <div className="p-4">Loading forecast…</div>;
+    }
+
+    // if after loading we still have no data, warn the user
+    if (merged.length === 0) {
+        return (
+            <div className="p-4 text-red-600">
+                No historical data or forecast available for {activeSymbol}.
+            </div>
+        );
+    }
+
+    // otherwise render the normal chart
     const XScale = discontinuousTimeScaleProvider.inputDateAccessor(
         (d) => d.date
     );
@@ -112,45 +127,50 @@ export const ForecastDashboard = () => {
 
     return (
         <div className="p-4">
-            <div className="mb-4 flex items-center space-x-4">
-                <div>
-                    <label className="block text-sm font-medium">
-                        Target Profit
-                    </label>
-                    <div className="flex items-center space-x-2">
-                        <input
-                            type="number"
-                            className="border rounded p-2 w-32"
-                            value={targetPrice}
-                            onChange={(e) => setTargetPrice(e.target.value)}
-                            placeholder="e.g. 1000"
-                        />
-                        <span className="text-gray-600">
-                            (in {activeSymbol.split("-")[1]})
-                        </span>
+            {/* Controls & Metrics */}
+            <div className="mb-4 space-y-2">
+                <div className="flex items-end space-x-4">
+                    <div>
+                        <label className="block text-sm font-medium">
+                            Target Profit
+                        </label>
+                        <div className="flex items-center space-x-2">
+                            <input
+                                type="number"
+                                className="border rounded p-2 w-32"
+                                value={targetPrice}
+                                onChange={(e) => setTargetPrice(e.target.value)}
+                                placeholder="e.g. 1000"
+                            />
+                            <span className="text-gray-600">
+                                (in {activeSymbol.split("-")[1]})
+                            </span>
+                        </div>
                     </div>
+
+                    {maxProfitInfo && (
+                        <div className="text-blue-600">
+                            Max future profit ≈{" "}
+                            {format(".2f")(maxProfitInfo.profit)} on{" "}
+                            {timeFormat("%Y-%m-%d")(maxProfitInfo.date)}
+                        </div>
+                    )}
+
+                    {targetDate ? (
+                        <div className="text-green-600 font-semibold">
+                            Expected ≥{" "}
+                            {format(".2f")(currentPrice + +targetPrice)} on{" "}
+                            {timeFormat("%Y-%m-%d")(targetDate)}
+                        </div>
+                    ) : targetPrice !== "" ? (
+                        <div className="text-red-600">
+                            Not within forecast horizon
+                        </div>
+                    ) : null}
                 </div>
-                {maxProfitInfo && (
-                    <div className="mt-auto text-blue-600">
-                        Max future profit ≈{" "}
-                        {format(".2f")(maxProfitInfo.profit)} on{" "}
-                        {timeFormat("%Y-%m-%d")(maxProfitInfo.date)}
-                    </div>
-                )}
-                {targetDate && (
-                    <div className="ml-auto text-green-600 font-semibold">
-                        Expected ≥{" "}
-                        {format(".2f")(currentPrice + parseFloat(targetPrice))}{" "}
-                        on {timeFormat("%Y-%m-%d")(targetDate)}
-                    </div>
-                )}
-                {targetPrice !== "" && !targetDate && (
-                    <div className="ml-auto text-red-600">
-                        Not within forecast horizon
-                    </div>
-                )}
             </div>
 
+            {/* Unified Candlestick + Forecast */}
             <ChartCanvas
                 height={350}
                 width={800}
@@ -165,7 +185,6 @@ export const ForecastDashboard = () => {
                 zoomEvent
                 clamp
             >
-                {/* Candles */}
                 <Chart
                     id={1}
                     yExtents={(d) =>
@@ -179,11 +198,8 @@ export const ForecastDashboard = () => {
                     <MouseCoordinateX displayFormat={timeFormat("%Y-%m-%d")} />
                     <MouseCoordinateY displayFormat={format(".2f")} />
                     <CandlestickSeries />
-
-                    {/* Overlay forecast line */}
                     <LineSeries yAccessor={(d) => d.forecastPrice} />
                 </Chart>
-
                 <CrossHairCursor />
             </ChartCanvas>
         </div>
